@@ -208,3 +208,5 @@ BTC_EUR_kurs\.http
 \.src/
 
 benchmarking/nvidia-befehle/nvidia-smi-367\.38\.pdf
+
+test/
