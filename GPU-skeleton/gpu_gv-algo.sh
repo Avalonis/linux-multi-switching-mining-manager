@@ -530,10 +530,11 @@ while :; do
             # Erwartet werden weiter unten nur die $algorithm's in diesem Array, das wir jetzt neu erstellen
             for actRow in "${BENCH_ALGO_DISABLED_ARR_in[@]}"; do
                 read _date_ _oclock_ timestamp gpuIdx lfdAlgorithm Reason <<<${actRow}
-                [ ${gpuIdx} -eq ${gpu_idx} ] && BENCH_ALGO_DISABLED_ARR+=( ${lfdAlgorithm} )
+                [ ${gpuIdx#0} -eq ${gpu_idx} ] && BENCH_ALGO_DISABLED_ARR+=( ${lfdAlgorithm} )
             done
         fi
         _remove_lock                                     # ... und wieder freigeben
+        [ $debug -eq 1 -a ${#BENCH_ALGO_DISABLED_ARR[@]} -gt 0 ] && declare -p BENCH_ALGO_DISABLED_ARR
 
         #    Zusätzlich die über GLOBAL_ALGO_DISABLED Algos rausnehmen...
         unset GLOBAL_ALGO_DISABLED_ARR
@@ -573,31 +574,35 @@ while :; do
         _read_in_static_COIN_MININGALGO_SERVERNAME_PORT_from_Pool_Info_Array
 
         # Gibt es MissingAlgos, ziehen wir die Disabled Algos noch davon ab
-        unset ALL_MISSING_ALGOS I_want_to_Disable_myself_for_AutoBenchmarking
-        declare -a ALL_MISSING_ALGOS
+        unset ALL_MISSING_ALGORITHMs I_want_to_Disable_myself_for_AutoBenchmarking
+        declare -a ALL_MISSING_ALGORITHMs
         for minerName in "${ALLE_MINER[@]}"; do
             read m_name m_version <<<"${minerName//#/ }"
             declare -n   actMissingAlgos="Missing_${m_name}_${m_version//\./_}_Algos"
-            #declare -p "Missing_${m_name}_${m_version//\./_}_Algos"
-            #declare -p "Mining_${m_name}_${m_version//\./_}_Algos"
-            #declare -p "Available_${m_name}_${m_version//\./_}_Algos"
-            if [ ${#actMissingAlgos[@]} -gt 0 ]; then
-                for miningAlgo in ${actMissingAlgos[@]}; do
-                    algorithm="${miningAlgo}#${m_name}#${m_version}"
-                    if [[ "${#BENCH_ALGO_DISABLED_ARR[@]}" > 0 ]]; then
-                        #[[ ! "${BENCH_ALGO_DISABLED_ARR[@]}"  =~ ${algorithm} ]] && ALL_MISSING_ALGOS[${#ALL_MISSING_ALGOS[@]}]=${algorithm}
-                        [[ ! "${BENCH_ALGO_DISABLED_ARR[@]}"  =~ ${algorithm} ]] && ALL_MISSING_ALGOS+=( ${algorithm} )
-                    fi
-                    if [[ "${#GLOBAL_ALGO_DISABLED_ARR[@]}" >0 ]]; then
-                        REGEXPAT="\b${miningAlgo}\b"
-                        #[[ ! "${GLOBAL_ALGO_DISABLED_ARR[@]}" =~ ${REGEXPAT}  ]] && ALL_MISSING_ALGOS[${#ALL_MISSING_ALGOS[@]}]=${algorithm}
-                        [[ ! "${GLOBAL_ALGO_DISABLED_ARR[@]}" =~ ${REGEXPAT}  ]] && ALL_MISSING_ALGOS+=( ${algorithm} )
-                    fi
-                done
-            fi
+            #echo ${!actMissingAlgos}
+
+            for actAlgo in ${!actMissingAlgos[@]}; do
+                miningAlgo=${actMissingAlgos[$actAlgo]}
+                algorithm="${miningAlgo}#${m_name}#${m_version}"
+                if [[ "${#GLOBAL_ALGO_DISABLED_ARR[@]}" -gt 0 ]]; then
+                    REGEXPAT="\b${miningAlgo}\b"
+                    [[ "${GLOBAL_ALGO_DISABLED_ARR[@]}" =~ ${REGEXPAT}  ]] && continue
+                fi
+                if [[ "${#BENCH_ALGO_DISABLED_ARR[@]}" -gt 0 ]]; then
+                    REGEXPAT="\b${algorithm}\b"
+                    [[ "${BENCH_ALGO_DISABLED_ARR[@]}"  =~ ${REGEXPAT} ]] && continue
+                fi
+                ALL_MISSING_ALGORITHMs+=( ${algorithm} )
+            done
         done
-        [ ${#ALL_MISSING_ALGOS[@]} -gt 0 ] && I_want_to_Disable_myself_for_AutoBenchmarking=1
-        [ ${debug} -eq 1 ] && echo "GPU #${gpu_idx}: Anzahl vermisster Algos: ${#ALL_MISSING_ALGOS[@]} DisableMyself: ->$I_want_to_Disable_myself_for_AutoBenchmarking<-"
+
+        if [ ${#ALL_MISSING_ALGORITHMs[@]} -gt 0 ]; then
+            I_want_to_Disable_myself_for_AutoBenchmarking=1
+            if [ ${debug} -eq 1 ]; then
+                echo "GPU #${gpu_idx}: Anzahl vermisster Algos: ${#ALL_MISSING_ALGORITHMs[@]} DisableMyself: ->$I_want_to_Disable_myself_for_AutoBenchmarking<-"
+                declare -p ALL_MISSING_ALGORITHMs
+            fi
+        fi
 
         ###############################################################################
         #
@@ -1025,7 +1030,7 @@ while :; do
                 # Wir müssen auf jeden Fall im Fall StartMiner=0 prüfen, ob der Miner noch läuft UND IHN DANN WEITERLAUFEN LASSEN.
                 # Und es ist nichts weiter zu schreiben.
                 # Wir müssen das nur überleben und wieder hier rein kommen... oder eben nicht mehr. Dann hat es sich von selbst erledigt,
-                # weil keine Elemente in der Liste/Array ALL_MISSING_ALGOS[@] mehr drin sind.
+                # weil keine Elemente in der Liste/Array ALL_MISSING_ALGORITHMs[@] mehr drin sind.
                 #
                 # Wenn kein Miner läuft, war keiner gestartet oder wurde gestoppt und es ist kein Neuer zu starten.
                 # Das ist der Fall, in dem wir die GPU rausnehmen und das Benchmarking machen.
@@ -1055,10 +1060,10 @@ while :; do
                 printf " done\n"
 
 
-                # ALL_MISSING_ALGOS abarbeiten
+                # ALL_MISSING_ALGORITHMs abarbeiten
                 cd ../benchmarking
                 mkdir -p autobenchlogs
-                for algorithm in ${ALL_MISSING_ALGOS[@]}; do
+                for algorithm in ${ALL_MISSING_ALGORITHMs[@]}; do
 
                     echo "GPU #${gpu_idx}: ###---> Going to Auto-Benchmark Algorithm/Miner ${algorithm}, trying to produce some Coins on the fly..."
                     parameters="-d"
