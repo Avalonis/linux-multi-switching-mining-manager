@@ -59,27 +59,28 @@ echo $$ >$(basename $0 .sh).pid
 # 9462  9462  1903 pts/0    00:00:00 multi_mining_ca
 # ps -j --pid $$ | grep $$
 
+# Die folgenden Kommandos sind als root in der MM-Root auszuführen, damit der MM sich auf RealTime Priority setzen kann:
+_RTPRIO_=$(ls -la .#rtprio#)
+echo ${_RTPRIO_}
+REGEXPAT="^-rwsr-xr-x"
+if [[ ! "${_RTPRIO_}" =~ ${REGEXPAT} ]]; then
+    echo "
+Damit der MultiMiner überhaupt vernünftig arbeiten kann, bitte als Kenner des root-Passworts die folgenden Kommandos in der MM-Root ausführen:
+$ su
+# cp /usr/bin/chrt .#rtprio#
+# chmod 4755 .#rtprio#
+# exit
+
+Danach den MultiMiner neu starten.
+"
+    exit 2 # No Real-Time Priority
+fi
+
+./.#rtprio# -f -p 95 $$
+
 export MULTI_MINERS_PID=$$
 export ERRLOG=${LINUX_MULTI_MINING_ROOT}/$(basename $0 .sh).err
-rm -f ${ERRLOG}
-
-# Einmal zu prüfen und dann den Code wieder rauszuwerfen, dann ist die Umstellung durch, die Erweiterung um den gpu_idx
-if [ -s BENCH_ALGO_DISABLED ]; then
-    _reserve_and_lock_file BENCH_ALGO_DISABLED
-    cat BENCH_ALGO_DISABLED | grep -E -v -e '^#|^$' | readarray -n 0 -O 0 -t BENCH_ALGO_DISABLED_ARR_in
-
-    # Erwartet werden weiter unten nur die $algorithm's in diesem Array, das wir jetzt neu erstellen
-    for actRow in "${BENCH_ALGO_DISABLED_ARR_in[@]}"; do
-        read _date_ _oclock_ timestamp gpuIdx lfdAlgorithm Reason <<<${actRow}
-        REGEXPAT="^[[:digit:]]+$"
-        if [[ ! "${gpuIdx}" =~ ${REGEXPAT} ]]; then
-            # Die Datei ist eine zu alte Version und muss entfernt werden.
-            rm -f BENCH_ALGO_DISABLED
-            break
-        fi
-    done
-    _remove_lock                                     # ... und wieder freigeben
-fi
+mv -f ${ERRLOG} ${ERRLOG}.BAK
 
 function _delete_temporary_files () {
     rm -f ${SYNCFILE} ${SYSTEM_STATE}.lock .bc_result_GPUs_* .bc_prog_GPUs_* ._reserve_and_lock_counter.* \
@@ -196,7 +197,7 @@ ATTENTION_FOR_USER_INPUT=1
 while : ; do
     printf "\n=========         Beginn neuer Zyklus um:     $(date "+%Y-%m-%d %H:%M:%S" )     $(date +%s)         =========\n"
 
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >1.< While Loop ENTRY" >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >1.< While Loop ENTRY" >>perfmon.log
 
     # Diese Abfrage erzeugt die beiden Dateien "gpu_system.out" und "GLOBAL_GPU_SYSTEM_STATE.in"
     # Daten von "GLOBAL_GPU_SYSTEM_STATE.in", WELCHES MANUELL BEARBEITET WERDEN KANN,
@@ -217,7 +218,7 @@ while : ; do
 
                 lfd_gpu_idx=$(< gpu_index.in)
                 GPU_GV_LOG="gpu_gv-algo_${lfdUuid}.log"
-                rm -f ${GPU_GV_LOG}
+                mv -f ${GPU_GV_LOG} ${GPU_GV_LOG}.BAK
                 echo "GPU #${lfd_gpu_idx}: Starting process in the background..."
                 ${LINUX_MULTI_MINING_ROOT}/${lfdUuid}/gpu_gv-algo.sh >>${GPU_GV_LOG} &
                 BG_PIDs+=( $! )
@@ -246,7 +247,7 @@ while : ; do
         #    Für die Logs in eigenem Terminalfenster, in dem verblieben wird, wenn tail abgebrochen wird:
         ofsX=$((ii*60+50))
         ofsY=$((ii*30+50))
-        rm -f algo_multi_abfrage.log
+        mv -f algo_multi_abfrage.log algo_multi_abfrage.log.BAK
         echo "Starting algo_multi_abfrage.sh in the background..."
         ${LINUX_MULTI_MINING_ROOT}/algo_multi_abfrage.sh &>>algo_multi_abfrage.log &
         BG_PIDs+=( $! )
@@ -326,7 +327,7 @@ while : ; do
     read new_Data_available SynFrac <<<$(_get_file_modified_time_ ${SYNCFILE})
     SynSecs=$((${new_Data_available} + ${MM_validating_delay}))
 
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >2.< Startschuss: Neue Daten sind verfügbar" >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >2.< Startschuss: Neue Daten sind verfügbar" >>perfmon.log
 
     ###############################################################################################
     # (26.10.2017)
@@ -392,7 +393,7 @@ while : ; do
 
     [ ${debug} -eq 1 ] && echo "Last read nowSecs: \${nowSecs}.\${nowFrac} ${nowSecs}.${nowFrac}"
     echo $(date "+%Y-%m-%d %H:%M:%S" ) $(date +%s)
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >3.< GPUs haben alle Daten geschrieben" >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >3.< GPUs haben alle Daten geschrieben" >>perfmon.log
 
     ###############################################################################################
     #
@@ -424,7 +425,7 @@ while : ; do
     # Neu:
     _read_in_Validated_ALGO_WATTS_MINESin
 
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >4.< Alle Algos aller GPUs sind eigelesen." >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >4.< Alle Algos aller GPUs sind eigelesen." >>perfmon.log
 
     ###############################################################################################
     #
@@ -514,7 +515,7 @@ while : ; do
     #     unter Berücksichtigung eines entsprechenden "solar" Anteils, wodurch die Kosten sinken.
     # Die Kombination mit dem besten GV-Verhältnis merken wir uns jeweils in MAX_PROFIT und MAX_PROFIT_GPU_Algo_Combination:
     
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >5.< Berechnungen beginnen mit Einzelberechnungen" >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >5.< Berechnungen beginnen mit Einzelberechnungen" >>perfmon.log
 
     #####################################################################################################
     #
@@ -545,9 +546,6 @@ while : ; do
     echo "=========  GPU Einzelberechnungen  ========="
     echo "Ermittlung aller gewinnbringenden Algorithmen durch Berechnung:"
     echo "Jede GPU für sich betrachtet, wenn sie als Einzige laufen würde UND Beginn der Ermittlung und des Hochfahrens von MAX_PROFIT !"
-    if [ ${verbose} == 1 ]; then
-        echo "Damit sparen wir uns später den Fall '1 GPU aus MAX_GOOD möglichen GPUs' und können gleich mit 2 beginnen!"
-    fi
 
     # Die meisten der folgenden Arrays, die wir erstellen werden, sind nichts weiter als eine Art "View"
     # auf die GPU{realer_gpu_index}Algos/Watts/Mines Arrays, die die Rohdaten halten und
@@ -773,7 +771,7 @@ while : ; do
         echo "Anzahl System-GPUs                                            = ${#index[@]}"
     fi
 
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >6.< Beginn mit der Gesamtsystemberechnung" >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >6.< Beginn mit der Gesamtsystemberechnung" >>perfmon.log
     
     # Sind überhaupt irgendwelche Date eingelesen worden und prüfbare GPU's ermittelt worden?
     # Wenn nicht, gabe es keine Einzelberechnung und dann ist auch keine Gesamtberechnung nötig.
@@ -829,6 +827,7 @@ while : ; do
                 _CREATE_AND_CALCULATE_EVERY_AND_ALL_SUBSEQUENT_COMBINATION_CASES \
                     ${MAX_GOOD_GPUs} 0 $((${MAX_GOOD_GPUs} - ${numGPUs} + 1))
             done
+            echo "$(date "+%Y-%m-%d %H:%M:%S" ) $(date +%s) Berechnung Ende, es folgt das Warten auf die .bc_result_* Dateien" >>${ERRLOG}
 
             # Woher wissen wir nun, wann der Prozess beendet ist?
             # PID und Befehlszeile - bc >.bc_result_GPUs_${MAX_GPU_TIEFE}${FN_combi} ?
@@ -857,18 +856,10 @@ while : ; do
             #MAX_FP_MINES:                    15580.31499102
             #MAX_FP_WATTS:                    675
 
-            num_threads=${#bc_THREAD_PIDS[@]}
-            while (( num_threads )); do
-                for thread_pid in ${!bc_THREAD_PIDS[@]}; do
-                    kill_pid=$(ps -ef | grep -w -e "${thread_pid}" \
-                                      | grep -v 'grep -w -e ' \
-                                      | gawk -e '$2 == '${thread_pid}' {print $2; exit}' )
-                    [ "${thread_pid}" != "${kill_pid}" ] && unset bc_THREAD_PIDS[${thread_pid}]
-                done
-                sleep .2
-                num_threads=${#bc_THREAD_PIDS[@]}
-            done
+            wait ${!bc_THREAD_PIDS[@]}
+            RC=$?
             ende[$c]=$(date +%s)
+            echo "$(date -d "@${ende[$c]}" "+%Y-%m-%d %H:%M:%S" ) ${ende[$c]} Ergebnis des \"wait \${!bc_THREAD_PIDS[@]}\": ->$RC<-" >>${ERRLOG}
             echo "Benötigte Zeit zur parallelen Berechnung aller Kombinationen:" $(( ${ende[$c]} - ${start[$c]} )) Sekunden
 
             touch .MAX_PROFIT.in.lock .MAX_FP_MINES.in.lock .GLOBAL_GPU_COMBINATION_LOOP_COUNTER.lock
@@ -883,9 +874,10 @@ while : ; do
                       >/dev/null
             while [[ -f .MAX_PROFIT.in.lock || -f .MAX_FP_MINES.in.lock || -f .GLOBAL_GPU_COMBINATION_LOOP_COUNTER.lock ]]; do sleep .01; done
 
-            # Das steht in .MAX_PROFIT.in:
-            # MAX_PROFIT:   .00274536 1:0,2:0,3:0,4:0,5:0,6:0
-            read muck MAX_PROFIT   MAX_PROFIT_GPU_Algo_Combination                    <<<$(< .MAX_PROFIT.in)   #${_MAX_PROFIT_in}
+            # Das stand bei dem ersten exit 77 in .MAX_PROFIT.in:
+            # MAX_PROFIT:   .00190162 1:0,2:0,3:0,4:0,6:0,7:0
+            #
+            read muck MAX_PROFIT   MAX_PROFIT_GPU_Algo_Combination <<<$(< .MAX_PROFIT.in)   #${_MAX_PROFIT_in}
             if [ ${#MAX_PROFIT} -eq 0 ]; then
                 echo "${ende[$c]}: Stopping MultiMiner because of no MAX_PROFIT with exit code 77" | tee -a ${ERRLOG} .MM_STOPPED_INTERALLY
                 exit 77
@@ -937,7 +929,7 @@ while : ; do
     #
     ################################################################################
 
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >7.< Auswertung und Miner-Steuerungen" >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >7.< Auswertung und Miner-Steuerungen" >>perfmon.log
 
     printf "=========       Endergebnis        =========\n"
     echo "\$GLOBAL_GPU_COMBINATION_LOOP_COUNTER: $GLOBAL_GPU_COMBINATION_LOOP_COUNTER"
@@ -1275,7 +1267,7 @@ while : ; do
         fi
     fi
 
-    [[ ${performanceTest} -ge 1 ]] && echo "$(date --utc +%s): >8.< Eintritt in den WARTEZYKLUS..." >>perfmon.log
+    [[ ${performanceTest} -ge 1 ]] && echo "$(date +%s): >8.< Eintritt in den WARTEZYKLUS..." >>perfmon.log
 
     printf "=========         Ende des Zyklus um:         $(date "+%Y-%m-%d %H:%M:%S" )     $(date +%s)         =========\n"
     while [ "${new_Data_available}" == "$(date --reference=${SYNCFILE} +%s)" ] ; do
