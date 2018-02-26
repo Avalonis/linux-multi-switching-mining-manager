@@ -344,3 +344,7 @@ algo_infos\.doc
 graf/
 
 distribution/lmms\.tar\.gz
+
+*.csv
+
+*.inc#
